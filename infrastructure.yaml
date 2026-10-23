@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploys a small public web server for an AWS network troubleshooting portfolio lab.
+
+Parameters:
+  LatestAmiId:
+    Description: Public Systems Manager parameter for the latest Amazon Linux 2023 x86_64 AMI.
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+
+Resources:
+  LabVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: aws-network-repair-vpc
+          
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: aws-network-repair-igw
+
+  GatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref LabVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref LabVpc
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: aws-network-repair-public-subnet
+          
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref LabVpc
+      Tags:
+        - Key: Name
+          Value: aws-network-repair-public-rt
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+      
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allows public HTTP access to the portfolio web server.
+      VpcId: !Ref LabVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: aws-network-repair-web-sg
+
+  WebServer:
+    Type: AWS::EC2::Instance
+    DependsOn: DefaultRoute
+    Properties:
+      ImageId: !Ref LatestAmiId
+      InstanceType: t3.micro
+      SubnetId: !Ref PublicSubnet
+      SecurityGroupIds:
+        - !Ref WebServerSecurityGroup
+      UserData:
+        Fn::Base64: |
+          #!/bin/bash -xe
+          sudo dnf install -y httpd wget php-fpm php-mysqli php-json php php-devel
+          sudo systemctl enable httpd
+          sudo systemctl start httpd
+          cat > /var/www/html/index.html <<'EOF'
+                    <!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>AWS Network Repair Lab</title>
+            <style>
+              body { margin: 0; min-height: 100vh; display: grid; place-items: center; font-family: Arial, sans-serif; background: #0f172a; color: #e2e8f0; }
+              main { width: min(680px, 86vw); padding: 2.5rem; border: 1px solid #334155; border-radius: 16px; background: #1e293b; box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35); }
+              h1 { color: #38bdf8; }
+              code { color: #fbbf24; }
+            </style>
+          </head>
+          <body>
+            <main>
+              <p>Connectivity restored</p>
+              <h1>AWS Network Repair Lab</h1>
+              <p>This Amazon Linux 2023 web server was deployed with AWS CloudFormation.</p>
+              <p>HTTP traffic now reaches the instance through a security group rule for <code>TCP/80</code>.</p>
+            </main>
+          </body>
+          </html>
+          EOF
+      Tags:
+        - Key: Name
+          Value: aws-network-repair-web-server
+          
+Outputs:
+  WebsiteURL:
+    Description: Public URL for the portfolio web page.
+    Value: !Sub 'http://${WebServer.PublicDnsName}'
+  WebServerInstanceId:
+    Description: EC2 instance ID used as the Reachability Analyzer destination.
+    Value: !Ref WebServer
+  InternetGatewayId:
+    Description: Internet gateway ID used as the Reachability Analyzer source.
+    Value: !Ref InternetGateway
+  SecurityGroupId:
+    Description: Security group ID expected to block and then allow HTTP.
+    Value: !Ref WebServerSecurityGroup
+  VpcId:
+    Description: VPC created for the lab.
+    Value: !Ref LabVpc
+          
