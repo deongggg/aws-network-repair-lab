@@ -20,7 +20,7 @@ A deployed AWS CloudFormation stack failed to deliver HTTP traffic to a web serv
 
 ### Sandbox Environment Constraint & Diagnostic Pivot
 
-Because this project was deployed inside a secure educational sandbox environment (**AWS Academy**), the managed lab role lacked API permissions to query the underlying route analyzer engine, returning the following authorization error:
+Because this project was deployed inside a secure educational sandbox environment (**AWS re/Start**), the managed lab role lacked API permissions to query the underlying route analyzer engine, returning the following authorization error:
 
 `User is not authorized to perform: tiros:CreateQuery`
 
